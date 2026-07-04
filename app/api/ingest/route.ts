@@ -1,6 +1,6 @@
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/lib/generated/prisma";
+import { Prisma } from "../../../lib/generated/prisma";
 import { getSession } from "@/lib/auth";
 import { uploadPdfToB2 } from "@/lib/b2";
 

@@ -1,6 +1,6 @@
 // chat/route.ts
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/lib/generated/prisma";
+import { Prisma } from "../../../lib/generated/prisma";
 import { getSession } from "@/lib/auth";
 
 type PolicyChunkResult = {
