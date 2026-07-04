@@ -46,7 +46,7 @@ export default function Sidebar({
   return (
     <>
       {!isOpen && (
-        <div className="w-12 shrink-0 border-r border-[#1B2430]/10 bg-[#FDFCF9] flex flex-col items-center pt-6">
+        <div className="w-12 shrink-0 sticky top-0 h-screen border-r border-[#1B2430]/10 bg-[#FDFCF9] flex flex-col items-center pt-6">
           <button
             onClick={onToggle}
             aria-label="Open sidebar"
@@ -58,8 +58,8 @@ export default function Sidebar({
       )}
 
       {isOpen && (
-        <aside className="w-80 shrink-0 border-r border-[#1B2430]/10 bg-[#FDFCF9] flex flex-col">
-          <div className="px-6 pt-8 pb-6 border-b border-[#1B2430]/10 flex items-start justify-between">
+        <aside className="w-80 shrink-0 sticky top-0 h-screen border-r border-[#1B2430]/10 bg-[#FDFCF9] flex flex-col">
+          <div className="shrink-0 px-6 pt-8 pb-6 border-b border-[#1B2430]/10 flex items-start justify-between">
             <div>
               <p className="text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
                 Policy Index
@@ -75,7 +75,7 @@ export default function Sidebar({
             </button>
           </div>
 
-          <div className="px-6 pt-4">
+          <div className="shrink-0 px-6 pt-4">
             <button
               onClick={onNewChat}
               className="w-full text-center bg-[#1B2430] text-[#FDFCF9] text-sm font-medium py-2.5 rounded-sm hover:bg-[#2A3648] transition-colors"

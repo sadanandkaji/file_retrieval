@@ -1,3 +1,4 @@
+// chat/route.ts
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma";
 import { getSession } from "@/lib/auth";
@@ -67,12 +68,12 @@ export async function POST(req: Request) {
   const embedding = embedJson.data[0].embedding;
   const vectorLiteral = `'${JSON.stringify(embedding)}'::vector`;
 
-  // 2. Retrieve top matching policy chunks
+  // 2. Retrieve top matching policy chunks.
   const results = (await prisma.$queryRaw`
     SELECT content, document_name, section_title, page_number
     FROM policy_chunks
     ORDER BY embedding <=> ${Prisma.raw(vectorLiteral)}
-    LIMIT 5
+    LIMIT 12
   `) as PolicyChunkResult[];
 
   if (results.length === 0) {
@@ -114,12 +115,11 @@ export async function POST(req: Request) {
           content: `You are a policy assistant answering employee questions about company policy.
 
 Rules:
-- Answer ONLY the specific question asked. Do not summarize the entire document.
-- Prefer short bullet points when the answer has more than one part; otherwise 2-4 plain sentences.
-- Do not use markdown headers (#) or horizontal rules (---). Emojis are fine sparingly.
-- Always end your answer with the exact source in this format: (Section X, policy_name.pdf)
+- If the question asks about one specific topic (e.g. "what's the notice period"), answer only that — don't pad it with unrelated sections.
+- If the question asks for an overview, a full list, everything covered, or a summary — in any phrasing — walk through every section present in the excerpts below, briefly.
+- Write in plain text only. Do not use asterisks, bold, bullet points, markdown headers, or any other markdown formatting. If listing multiple items, separate them with a line break and a dash, like "- Item one".
+- Do not include source citations, section numbers, or file names in your answer text. Sources are handled separately by the application.
 - If the excerpts don't contain the answer, say "I don't see that covered in the uploaded policies" — do not guess.
-- Never list out every section of the policy unless the person explicitly asks for a full summary.
 
 Policy excerpts:
 ${context}`,

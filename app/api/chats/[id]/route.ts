@@ -1,3 +1,4 @@
+//chats/[id]/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
