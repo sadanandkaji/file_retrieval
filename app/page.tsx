@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import Sidebar, { type ChatSummary, type CurrentUser } from "./component/sidebar";
+import StreamingMessage from "./component/StreamingMessage";
 
 type Message = {
   role: "user" | "assistant";
@@ -8,49 +10,53 @@ type Message = {
   citations?: { document: string; section: string; page: number }[];
 };
 
-type UploadedDoc = {
-  name: string;
-  chunks: number;
-  status: "uploading" | "ready" | "error";
-};
-
 export default function PolicyChatPage() {
-  const [docs, setDocs] = useState<UploadedDoc[]>([]);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function loadChats() {
+    const res = await fetch("/api/chats");
+    const data = await res.json();
+    setChats(data.chats ?? []);
+  }
 
-    setDocs((prev) => [...prev, { name: file.name, chunks: 0, status: "uploading" }]);
+  useEffect(() => {
+    (async () => {
+      const meRes = await fetch("/api/auth/me");
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        setUser(meData.user);
+      }
+    })();
+    loadChats();
+  }, []);
 
-    const formData = new FormData();
-    formData.append("file", file);
+  async function handleSelectChat(id: string) {
+    setActiveChatId(id);
+    const res = await fetch(`/api/chats/${id}`);
+    const data = await res.json();
+    setMessages(
+      (data.chat?.messages ?? []).map((m: { role: string; content: string; citations: unknown }) => ({
+        role: m.role,
+        content: m.content,
+        citations: m.citations ?? undefined,
+      }))
+    );
+  }
 
-    try {
-      const res = await fetch("/api/ingest", { method: "POST", body: formData });
-      const data = await res.json();
-
-      setDocs((prev) =>
-        prev.map((d) =>
-          d.name === file.name ? { ...d, chunks: data.chunks ?? 0, status: "ready" } : d
-        )
-      );
-    } catch {
-      setDocs((prev) =>
-        prev.map((d) => (d.name === file.name ? { ...d, status: "error" } : d))
-      );
-    }
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  function handleNewChat() {
+    setActiveChatId(null);
+    setMessages([]);
   }
 
   async function handleSend() {
@@ -66,23 +72,30 @@ export default function PolicyChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, chatSessionId: activeChatId }),
       });
+
+      const returnedSessionId = res.headers.get("X-Chat-Session-Id");
+      if (returnedSessionId && returnedSessionId !== activeChatId) {
+        setActiveChatId(returnedSessionId);
+      }
 
       if (!res.body) throw new Error("No response stream");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-        // Parse SSE lines: "data: {...}"
-        const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
         for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
           const payload = line.replace("data: ", "").trim();
           if (payload === "[DONE]") continue;
           try {
@@ -110,64 +123,22 @@ export default function PolicyChatPage() {
       });
     } finally {
       setIsSending(false);
+      loadChats();
     }
   }
 
   return (
     <div className="min-h-screen bg-[#F7F5F0] text-[#1B2430] flex">
-      {/* Sidebar — document ledger */}
-      <aside className="w-80 shrink-0 border-r border-[#1B2430]/10 bg-[#FDFCF9] flex flex-col">
-        <div className="px-6 pt-8 pb-6 border-b border-[#1B2430]/10">
-          <p className="text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
-            Policy Index
-          </p>
-          <h1 className="mt-1 text-2xl font-serif text-[#1B2430]">Document Register</h1>
-        </div>
+      <Sidebar
+        chats={chats}
+        activeChatId={activeChatId}
+        isOpen={sidebarOpen}
+        user={user}
+        onToggle={() => setSidebarOpen((v) => !v)}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
+      />
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
-          {docs.length === 0 && (
-            <p className="text-sm text-[#1B2430]/50 leading-relaxed">
-              No policies indexed yet. Add a PDF to begin.
-            </p>
-          )}
-
-          {docs.map((doc) => (
-            <div
-              key={doc.name}
-              className="border border-[#1B2430]/10 bg-white px-4 py-3 rounded-sm"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium truncate">{doc.name}</p>
-                <StatusDot status={doc.status} />
-              </div>
-              <p className="mt-1 text-xs text-[#1B2430]/50">
-                {doc.status === "uploading" && "Indexing…"}
-                {doc.status === "ready" && `${doc.chunks} sections indexed`}
-                {doc.status === "error" && "Failed to index"}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="p-6 border-t border-[#1B2430]/10">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/pdf"
-            onChange={handleFileUpload}
-            className="hidden"
-            id="pdf-upload"
-          />
-          <label
-            htmlFor="pdf-upload"
-            className="block w-full text-center cursor-pointer bg-[#1B2430] text-[#FDFCF9] text-sm font-medium py-3 rounded-sm hover:bg-[#2A3648] transition-colors"
-          >
-            Add policy PDF
-          </label>
-        </div>
-      </aside>
-
-      {/* Main — chat */}
       <main className="flex-1 flex flex-col">
         <header className="px-10 py-6 border-b border-[#1B2430]/10">
           <p className="text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
@@ -181,28 +152,37 @@ export default function PolicyChatPage() {
             <div className="max-w-md">
               <p className="text-[#1B2430]/60 leading-relaxed">
                 Ask a question about any indexed policy. Answers are grounded strictly in
-                the documents you've added — nothing is inferred beyond what's written.
+                the documents you&apos;ve added — nothing is inferred beyond what&apos;s written.
               </p>
             </div>
           )}
 
-          {messages.map((msg, i) => (
-            <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}>
-              <div
-                className={
-                  msg.role === "user"
-                    ? "max-w-lg bg-[#1B2430] text-[#FDFCF9] px-5 py-3 rounded-sm text-sm leading-relaxed"
-                    : "max-w-2xl bg-white border border-[#1B2430]/10 px-5 py-4 rounded-sm text-sm leading-relaxed whitespace-pre-wrap"
-                }
-              >
-                {msg.content || (msg.role === "assistant" && isSending && i === messages.length - 1 ? (
-                  <span className="text-[#1B2430]/40">Reading the register…</span>
-                ) : (
-                  msg.content
-                ))}
+          {messages.map((msg, i) => {
+            const isLast = i === messages.length - 1;
+            const isLive = msg.role === "assistant" && isLast && isSending;
+
+            return (
+              <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                <div
+                  className={
+                    msg.role === "user"
+                      ? "max-w-lg bg-[#1B2430] text-[#FDFCF9] px-5 py-3 rounded-sm text-sm leading-relaxed"
+                      : "max-w-2xl bg-white border border-[#1B2430]/10 px-5 py-4 rounded-sm text-sm leading-relaxed whitespace-pre-wrap"
+                  }
+                >
+                  {msg.role === "assistant" ? (
+                    msg.content || isLive ? (
+                      <StreamingMessage fullText={msg.content} isStreaming={isLive} />
+                    ) : (
+                      <span className="text-[#1B2430]/40">Reading the register…</span>
+                    )
+                  ) : (
+                    msg.content
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="px-10 py-6 border-t border-[#1B2430]/10">
@@ -232,10 +212,4 @@ export default function PolicyChatPage() {
       </main>
     </div>
   );
-}
-
-function StatusDot({ status }: { status: UploadedDoc["status"] }) {
-  const color =
-    status === "ready" ? "bg-emerald-500" : status === "error" ? "bg-red-500" : "bg-[#8A7A5C]";
-  return <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${color}`} />;
 }

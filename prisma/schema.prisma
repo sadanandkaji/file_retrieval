@@ -12,14 +12,82 @@ datasource db {
   provider = "postgresql"
 }
 
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum DocStatus {
+  UPLOADING
+  READY
+  ERROR
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  createdById  String?   @map("created_by_id")
+
+  documents    Document[]
+  chatSessions ChatSession[]
+
+  @@map("users")
+}
+
+model Document {
+  id                String    @id @default(cuid())
+  name              String
+  cloudinaryUrl     String    @map("cloudinary_url")
+  cloudinaryPublicId String   @map("cloudinary_public_id")
+  status            DocStatus @default(UPLOADING)
+  chunkCount        Int       @default(0) @map("chunk_count")
+  uploadedById      String    @map("uploaded_by_id")
+  uploadedBy        User      @relation(fields: [uploadedById], references: [id])
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  chunks            PolicyChunk[]
+
+  @@map("documents")
+}
+
 model PolicyChunk {
-  id            BigInt   @id @default(autoincrement())
-  documentName  String   @map("document_name")
-  sectionTitle  String?  @map("section_title")
-  pageNumber    Int?     @map("page_number")
-  content       String
-  embedding     Unsupported("vector(1536)")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id           BigInt   @id @default(autoincrement())
+  documentId   String?  @map("document_id")
+  document     Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentName String   @map("document_name")
+  sectionTitle String?  @map("section_title")
+  pageNumber   Int?     @map("page_number")
+  content      String
+  embedding    Unsupported("vector(1536)")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   @@map("policy_chunks")
+}
+
+model ChatSession {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id])
+  title     String    @default("New chat")
+  createdAt DateTime  @default(now()) @map("created_at")
+  messages  Message[]
+
+  @@map("chat_sessions")
+}
+
+model Message {
+  role          String
+  id            String      @id @default(cuid())
+  chatSessionId String      @map("chat_session_id")
+  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  content       String
+  citations     Json?
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@map("messages")
 }
