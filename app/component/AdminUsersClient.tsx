@@ -223,14 +223,14 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
         onNewChat={handleNewChat}
       />
 
-      <div className="flex-1 min-h-screen bg-[#F7F5F0] px-10 py-10">
+      <div className="flex-1 min-h-screen bg-[#F7F5F0] px-4 py-6 sm:px-10 sm:py-10">
         <p className="text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
           Administration
         </p>
-        <h1 className="mt-1 text-2xl font-serif text-[#1B2430] mb-8">Manage users</h1>
+        <h1 className="mt-1 text-xl sm:text-2xl font-serif text-[#1B2430] mb-6 sm:mb-8">Manage users</h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-8">
-          <form onSubmit={handleAddUser} className="bg-white border border-[#1B2430]/10 rounded-sm p-6 space-y-4 h-fit">
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 lg:gap-8">
+          <form onSubmit={handleAddUser} className="bg-white border border-[#1B2430]/10 rounded-sm p-5 sm:p-6 space-y-4 h-fit">
             <h2 className="text-sm font-medium">Add a new user</h2>
 
             <div>
@@ -239,7 +239,7 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
               />
             </div>
 
@@ -250,7 +250,8 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+                inputMode="email"
               />
             </div>
 
@@ -262,7 +263,7 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
               />
             </div>
 
@@ -271,7 +272,7 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as "ADMIN" | "USER")}
-                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
               >
                 <option value="USER">User</option>
                 <option value="ADMIN">Admin</option>
@@ -283,7 +284,7 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
             <button
               type="submit"
               disabled={saving}
-              className="w-full bg-[#1B2430] text-[#FDFCF9] text-sm font-medium py-2.5 rounded-sm hover:bg-[#2A3648] transition-colors disabled:opacity-40"
+              className="w-full bg-[#1B2430] text-[#FDFCF9] text-sm font-medium py-3 rounded-sm hover:bg-[#2A3648] transition-colors disabled:opacity-40"
             >
               {saving ? "Adding…" : "Add user"}
             </button>
@@ -296,8 +297,8 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
               </p>
             )}
 
-            <div className="bg-white border border-[#1B2430]/10 rounded-sm overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white border border-[#1B2430]/10 rounded-sm overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
                 <thead className="bg-[#F7F5F0] text-[#1B2430]/60 text-xs uppercase tracking-wide">
                   <tr>
                     <th className="text-left px-4 py-3">Name</th>
@@ -358,10 +359,10 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
 
       {/* Transfer-documents modal — shown when deletion is blocked */}
       {transferUser && (
-        <div className="fixed inset-0 bg-[#1B2430]/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-sm max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 bg-[#1B2430]/40 flex items-center justify-center z-50 px-3 sm:px-4">
+          <div className="bg-white rounded-sm max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
-              <h3 className="text-lg font-serif text-[#1B2430]">
+              <h3 className="text-base sm:text-lg font-serif text-[#1B2430]">
                 Transfer {transferUser.name}&apos;s documents
               </h3>
               <p className="mt-1 text-sm text-[#1B2430]/60 leading-relaxed">
@@ -376,9 +377,9 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
             ) : (
               <div className="max-h-40 overflow-y-auto border border-[#1B2430]/10 rounded-sm divide-y divide-[#1B2430]/10">
                 {pendingDocs.map((d) => (
-                  <div key={d.id} className="px-3 py-2 text-sm flex items-center justify-between">
+                  <div key={d.id} className="px-3 py-2 text-sm flex items-center justify-between gap-2">
                     <span className="truncate">{d.name}</span>
-                    <span className="text-xs text-[#1B2430]/40 shrink-0 ml-2">
+                    <span className="text-xs text-[#1B2430]/40 shrink-0">
                       {d.chunkCount} sections
                     </span>
                   </div>
@@ -396,7 +397,7 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
               <select
                 value={transferTargetId}
                 onChange={(e) => setTransferTargetId(e.target.value)}
-                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+                className="w-full border border-[#1B2430]/15 rounded-sm px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
               >
                 <option value="">Select a user…</option>
                 {transferCandidates.map((u) => (
@@ -409,18 +410,18 @@ export default function AdminUsersClient({ initialUser }: { initialUser: Current
 
             {transferError && <p className="text-xs text-red-600">{transferError}</p>}
 
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 pt-2">
               <button
                 onClick={closeTransferModal}
                 disabled={transferring}
-                className="text-sm px-4 py-2 rounded-sm border border-[#1B2430]/15 text-[#1B2430]/70 hover:bg-[#1B2430]/5 transition-colors disabled:opacity-40"
+                className="text-sm px-4 py-2.5 sm:py-2 rounded-sm border border-[#1B2430]/15 text-[#1B2430]/70 hover:bg-[#1B2430]/5 transition-colors disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmTransfer}
                 disabled={transferring || pendingDocs.length === 0}
-                className="text-sm px-4 py-2 rounded-sm bg-[#1B2430] text-[#FDFCF9] hover:bg-[#2A3648] transition-colors disabled:opacity-40"
+                className="text-sm px-4 py-2.5 sm:py-2 rounded-sm bg-[#1B2430] text-[#FDFCF9] hover:bg-[#2A3648] transition-colors disabled:opacity-40"
               >
                 {transferring ? "Transferring…" : "Transfer & remove account"}
               </button>
