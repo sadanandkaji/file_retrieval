@@ -1,8 +1,15 @@
 import type { NextConfig } from "next";
+import path from "path";
 
-// No serverExternalPackages needed for pdfjs-dist/@napi-rs/canvas anymore —
-// they're only used inside scripts/rasterize-pdf.mjs, which runs as a
-// standalone child process, not as code Next bundles.
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    // key = glob matching the route(s) that call rasterizePdf
+    "app/api/**/route": [
+      "./scripts/rasterize-pdf.mjs",
+      "./node_modules/@napi-rs/canvas/**",
+      "./node_modules/pdfjs-dist/**",
+    ],
+  },
+};
 
 export default nextConfig;
