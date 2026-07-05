@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/lib/generated/prisma";
 import { getSession } from "@/lib/auth";
 import { uploadPdfToB2 } from "@/lib/b2";
-import { extractPdfWithLayout } from "@/lib/pdfExtract";
-import { aiChunkDocument } from "@/lib/aiChunk";
+import { rasterizePdf } from "@/lib/Pdftoimages";
+import { aiChunkDocumentFromImages, extractChunkRelations } from "@/lib/Aichunkvision";
 
 export async function POST(req: Request) {
   if (!process.env.AICREDITS_KEY) {
@@ -34,29 +33,29 @@ export async function POST(req: Request) {
     return Response.json({ error: "Backblaze B2 upload failed" }, { status: 500 });
   }
 
-  // 2. Extract text with layout/position awareness (handles both linear
-  // documents and table-style layouts, unlike flat pdf-parse text).
-  let fullText: string;
+  // 2. Rasterize pages to images instead of extracting positioned text.
+  // This is the fix for template-dependent reading-order bugs: a vision
+  // model reads sidebars/boxes/columns the way a human does, regardless
+  // of whether the PDF is a linear report, a form, or an infographic.
+  let pages;
   try {
-    const extracted = await extractPdfWithLayout(buffer);
-    fullText = extracted.fullText;
+    pages = await rasterizePdf(buffer);
   } catch (err) {
-    console.error("PDF extraction failed:", err);
+    console.error("PDF rasterization failed:", err);
     return Response.json({ error: "Failed to read PDF content" }, { status: 400 });
   }
 
-  if (!fullText || !fullText.trim()) {
+  if (!pages || pages.length === 0) {
     return Response.json(
-      { error: "No extractable text found in this PDF." },
+      { error: "No pages found in this PDF." },
       { status: 400 }
     );
   }
 
-  // 3. Let the model structure the extracted text into sections/chunks,
-  // instead of relying on brittle regex heading detection.
+  // 3. Vision-based chunking, page by page.
   let chunks;
   try {
-    chunks = await aiChunkDocument(fullText, process.env.AICREDITS_KEY);
+    chunks = await aiChunkDocumentFromImages(pages, process.env.AICREDITS_KEY);
   } catch (err) {
     console.error("AI chunking failed:", err);
     return Response.json({ error: "Failed to structure PDF content" }, { status: 500 });
@@ -69,7 +68,11 @@ export async function POST(req: Request) {
     );
   }
 
-  // 4. Remove any previous document/chunks with the same name, then create fresh records.
+  // 4. Second pass: find cross-references between chunks. Best-effort —
+  // never blocks ingestion if it fails.
+  const relations = await extractChunkRelations(chunks, process.env.AICREDITS_KEY);
+
+  // 5. Remove any previous document/chunks with the same name, then create fresh records.
   const existingDoc = await prisma.document.findFirst({ where: { name: file.name } });
   if (existingDoc) {
     await prisma.document.delete({ where: { id: existingDoc.id } });
@@ -86,6 +89,10 @@ export async function POST(req: Request) {
   });
 
   let insertedCount = 0;
+  // Track section_title -> inserted chunk id so we can resolve relation
+  // edges (which refer to section titles) into real foreign keys.
+  // PolicyChunk.id is BigInt in the schema, so this must be too.
+  const titleToChunkId = new Map<string, bigint>();
 
   try {
     for (const chunk of chunks) {
@@ -113,21 +120,54 @@ export async function POST(req: Request) {
       }
 
       const embedding = embedJson.data[0].embedding;
-      const vectorLiteral = `'${JSON.stringify(embedding)}'::vector`;
+      // A plain array literal — pg parses this as vector input once cast.
+      // Safe to build as a string directly since it's numbers we generated,
+      // not user-controlled text.
+      const vectorLiteral = `[${embedding.join(",")}]`;
 
-      await prisma.$executeRaw`
-        INSERT INTO policy_chunks (document_id, document_name, section_title, page_number, content, embedding)
-        VALUES (
-          ${document.id},
-          ${file.name},
-          ${chunk.section_title},
-          ${chunk.page_number},
-          ${chunk.content},
-          ${Prisma.raw(vectorLiteral)}
-        )
-      `;
+      // Using $queryRawUnsafe with positional params instead of the
+      // Prisma.raw()-inside-a-tagged-template pattern: in Prisma 7's
+      // driver-adapter mode (@prisma/adapter-pg), nested Prisma.raw() no
+      // longer gets spliced into the SQL text — it gets serialized and
+      // sent as a bound parameter value instead, which is what caused
+      // "invalid input syntax for type vector" (Postgres was receiving
+      // the JSON dump of the Sql object, not the vector text). Real
+      // positional parameters avoid that entirely and are also the
+      // actually-safe way to parameterize the user-controlled fields here
+      // (document.id, section_title, content).
+      const inserted = await prisma.$queryRawUnsafe<{ id: bigint }[]>(
+        `INSERT INTO policy_chunks (document_id, document_name, section_title, page_number, content, embedding)
+         VALUES ($1, $2, $3, $4, $5, $6::vector)
+         RETURNING id`,
+        document.id,
+        file.name,
+        chunk.section_title,
+        chunk.page_number,
+        chunk.content,
+        vectorLiteral
+      );
 
+      titleToChunkId.set(chunk.section_title, inserted[0].id);
       insertedCount++;
+    }
+
+    // 6. Store resolved relations via the typed Prisma model. Skip any
+    // edge whose title didn't match an inserted chunk (e.g. the model
+    // referenced a title loosely).
+    for (const rel of relations) {
+      const fromId = titleToChunkId.get(rel.from_section);
+      const toId = titleToChunkId.get(rel.to_section);
+      if (!fromId || !toId || fromId === toId) continue;
+
+      await prisma.policyChunkRelation.create({
+        data: {
+          documentId: document.id,
+          fromChunkId: fromId,
+          toChunkId: toId,
+          relationType: rel.relation_type,
+          note: rel.note ?? null,
+        },
+      });
     }
   } catch (err) {
     console.error("Ingest failed mid-way:", err);
@@ -144,6 +184,7 @@ export async function POST(req: Request) {
     status: "ingested",
     documentId: document.id,
     chunks: insertedCount,
+    relations: relations.length,
     url: b2Result.url,
   });
 }

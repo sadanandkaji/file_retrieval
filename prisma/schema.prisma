@@ -53,7 +53,7 @@ model Document {
   createdAt         DateTime  @default(now()) @map("created_at")
 
   chunks            PolicyChunk[]
-
+ chunkRelations PolicyChunkRelation[]
   @@map("documents")
 }
 
@@ -67,8 +67,24 @@ model PolicyChunk {
   content      String
   embedding    Unsupported("vector(1536)")
   createdAt    DateTime @default(now()) @map("created_at")
-
+relationsFrom PolicyChunkRelation[] @relation("FromChunk")
+  relationsTo   PolicyChunkRelation[] @relation("ToChunk")
   @@map("policy_chunks")
+}
+
+model PolicyChunkRelation {
+  id           BigInt      @id @default(autoincrement())
+  documentId   String      @map("document_id")
+  document     Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fromChunkId  BigInt      @map("from_chunk_id")
+  fromChunk    PolicyChunk @relation("FromChunk", fields: [fromChunkId], references: [id], onDelete: Cascade)
+  toChunkId    BigInt      @map("to_chunk_id")
+  toChunk      PolicyChunk @relation("ToChunk", fields: [toChunkId], references: [id], onDelete: Cascade)
+  relationType String      @map("relation_type")
+  note         String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@map("policy_chunk_relations")
 }
 
 model ChatSession {
