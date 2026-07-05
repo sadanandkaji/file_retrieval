@@ -10,6 +10,54 @@ type PolicyChunkResult = {
   page_number: number;
 };
 
+// Detects short greetings/small-talk so we can answer them directly instead
+// of running them through embedding search + the model — those messages
+// carry no policy question, and forcing them through retrieval either wastes
+// an API call or produces an awkward "I don't see that covered" reply.
+// Deliberately conservative: only matches when the WHOLE trimmed message is
+// small talk, so "hi, what's the notice period" still goes through normal
+// retrieval instead of getting short-circuited.
+function matchGreeting(question: string): string | null {
+  const q = question.trim().toLowerCase().replace(/[!.?]+$/g, "");
+
+  if (/^(hi+|hello+|hey+|yo|sup|howdy|greetings)$/.test(q)) {
+    return "Hello! I'm here to help you find answers in your company's uploaded policies. What would you like to know?";
+  }
+
+  if (/^good\s?(morning|afternoon|evening|night)$/.test(q)) {
+    return "Hello! What can I help you find in the policies?";
+  }
+
+  if (/^(how are you|how's it going|how are things|what's up|whats up)$/.test(q)) {
+    return "I'm doing well, thanks for asking! What would you like to know about your company's policies?";
+  }
+
+  if (/^(thanks|thank you|thankyou|ty|cheers)$/.test(q)) {
+    return "You're welcome! Let me know if there's anything else about policy you'd like to check.";
+  }
+
+  if (/^(bye|goodbye|see you|see ya|later)$/.test(q)) {
+    return "Goodbye! Come back anytime you have a policy question.";
+  }
+
+  return null;
+}
+
+// Wraps a canned reply in the same SSE shape the real completion stream
+// sends, so the frontend's existing parsing/streaming logic handles it
+// identically to a normal model answer — no special-casing on the client.
+function fakeAssistantStream(message: string) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      const chunk = { choices: [{ delta: { content: message } }] };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+      controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+      controller.close();
+    },
+  });
+}
+
 export async function POST(req: Request) {
   if (!process.env.AICREDITS_KEY) {
     return Response.json(
@@ -44,6 +92,26 @@ export async function POST(req: Request) {
   await prisma.message.create({
     data: { chatSessionId: sessionRecord.id, role: "user", content: question },
   });
+
+  // Greeting / small talk — skip embeddings and the model entirely.
+  const greetingReply = matchGreeting(question);
+  if (greetingReply) {
+    await prisma.message.create({
+      data: {
+        chatSessionId: sessionRecord.id,
+        role: "assistant",
+        content: greetingReply,
+        citations: [] as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return new Response(fakeAssistantStream(greetingReply), {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "X-Chat-Session-Id": sessionRecord.id,
+      },
+    });
+  }
 
   // 1. Embed the question
   const embedRes = await fetch("https://api.aicredits.in/v1/embeddings", {
@@ -92,17 +160,7 @@ export async function POST(req: Request) {
       },
     });
 
-    const encoder = new TextEncoder();
-    const fakeStream = new ReadableStream({
-      start(controller) {
-        const chunk = { choices: [{ delta: { content: noDocsMessage } }] };
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-        controller.close();
-      },
-    });
-
-    return new Response(fakeStream, {
+    return new Response(fakeAssistantStream(noDocsMessage), {
       headers: {
         "Content-Type": "text/event-stream",
         "X-Chat-Session-Id": sessionRecord.id,
