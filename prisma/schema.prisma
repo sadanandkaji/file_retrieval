@@ -12,7 +12,6 @@ datasource db {
   provider = "postgresql"
 }
 
-
 enum Role {
   ADMIN
   USER
@@ -47,7 +46,10 @@ model Document {
   status            DocStatus @default(UPLOADING)
   chunkCount        Int       @default(0) @map("chunk_count")
   uploadedById      String    @map("uploaded_by_id")
-  uploadedBy        User      @relation(fields: [uploadedById], references: [id])
+  // Explicitly Restrict: a document must be transferred to another user
+  // (see /api/admin/users/:id/transfer-documents) before its uploader's
+  // account can be deleted — documents should never be silently orphaned.
+  uploadedBy        User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
   createdAt         DateTime  @default(now()) @map("created_at")
 
   chunks            PolicyChunk[]
@@ -72,7 +74,9 @@ model PolicyChunk {
 model ChatSession {
   id        String    @id @default(cuid())
   userId    String    @map("user_id")
-  user      User      @relation(fields: [userId], references: [id])
+  // Deleting a user deletes their chat history with them — messages under
+  // each session already cascade via the Message.chatSession relation below.
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String    @default("New chat")
   createdAt DateTime  @default(now()) @map("created_at")
   messages  Message[]

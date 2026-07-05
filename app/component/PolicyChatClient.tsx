@@ -10,10 +10,16 @@ type Message = {
   citations?: { document: string; section: string; page: number }[];
 };
 
-export default function PolicyChatClient({ initialUser }: { initialUser: CurrentUser }) {
+export default function PolicyChatClient({
+  initialUser,
+  initialChatId,
+}: {
+  initialUser: CurrentUser;
+  initialChatId?: string;
+}) {
   const [user] = useState<CurrentUser | null>(initialUser);
   const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [activeChatId, setActiveChatId] = useState<string | null>(initialChatId ?? null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -34,9 +40,9 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
     loadChats();
   }, []);
 
-  async function handleSelectChat(id: string) {
-    setActiveChatId(id);
+  async function loadChatMessages(id: string) {
     const res = await fetch(`/api/chats/${id}`);
+    if (!res.ok) return;
     const data = await res.json();
     setMessages(
       (data.chat?.messages ?? []).map((m: { role: string; content: string; citations: unknown }) => ({
@@ -47,9 +53,65 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
     );
   }
 
+  // Load the chat named in the URL (if any) on mount, e.g. when arriving via
+  // /chat/[id] from a link elsewhere in the app rather than clicking a chat
+  // in this page's own sidebar.
+  useEffect(() => {
+    if (!initialChatId) return;
+    loadChatMessages(initialChatId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialChatId]);
+
+  // Keep the browser's back/forward buttons working. We update the URL with
+  // the History API directly (not next/navigation's router) so switching
+  // chats never triggers Next.js's route resolution — that would unmount
+  // and remount this whole page, including the sidebar, causing a visible
+  // flash. This listener is what makes back/forward still do something
+  // sensible despite that.
+  useEffect(() => {
+    function onPopState() {
+      const match = window.location.pathname.match(/^\/chat\/([^/]+)\/?$/);
+      if (match) {
+        setActiveChatId(match[1]);
+        loadChatMessages(match[1]);
+      } else {
+        setActiveChatId(null);
+        setMessages([]);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  async function handleSelectChat(id: string) {
+    setActiveChatId(id);
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      setSidebarOpen(false);
+    }
+    window.history.pushState(null, "", `/chat/${id}`);
+    await loadChatMessages(id);
+  }
+
   function handleNewChat() {
     setActiveChatId(null);
     setMessages([]);
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      setSidebarOpen(false);
+    }
+    window.history.pushState(null, "", "/chat");
+  }
+
+  async function handleDeleteChat(id: string) {
+    const res = await fetch(`/api/chats/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+
+    await loadChats();
+
+    if (id === activeChatId) {
+      setActiveChatId(null);
+      setMessages([]);
+      window.history.pushState(null, "", "/");
+    }
   }
 
   async function handleSend() {
@@ -71,6 +133,7 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
       const returnedSessionId = res.headers.get("X-Chat-Session-Id");
       if (returnedSessionId && returnedSessionId !== activeChatId) {
         setActiveChatId(returnedSessionId);
+        window.history.replaceState(null, "", `/chat/${returnedSessionId}`);
       }
 
       if (!res.body) throw new Error("No response stream");
@@ -121,7 +184,7 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F5F0] text-[#1B2430] flex">
+    <div className="h-dvh bg-[#F7F5F0] text-[#1B2430] flex overflow-hidden">
       <Sidebar
         chats={chats}
         activeChatId={activeChatId}
@@ -130,20 +193,23 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
         onToggle={() => setSidebarOpen((v) => !v)}
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
+        onDeleteChat={handleDeleteChat}
       />
 
-      <main className="flex-1 flex flex-col">
-        <header className="px-10 py-6 border-b border-[#1B2430]/10">
-          <p className="text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
+      <main className="flex-1 flex flex-col h-dvh min-w-0">
+        <header className="shrink-0 px-4 sm:px-10 py-4 sm:py-6 border-b border-[#1B2430]/10 bg-[#F7F5F0]">
+          <p className="text-[10px] sm:text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
             Ask the register
           </p>
-          <h2 className="mt-1 text-xl font-serif">Every answer traces back to a clause</h2>
+          <h2 className="mt-1 text-base sm:text-xl font-serif truncate">
+            Every answer traces back to a clause
+          </h2>
         </header>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 py-8 space-y-6">
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-10 py-6 sm:py-8 space-y-4 sm:space-y-6">
           {messages.length === 0 && (
             <div className="max-w-md">
-              <p className="text-[#1B2430]/60 leading-relaxed">
+              <p className="text-[#1B2430]/60 leading-relaxed text-sm sm:text-base">
                 Ask a question about any indexed policy. Answers are grounded strictly in
                 the documents you&apos;ve added — nothing is inferred beyond what&apos;s written.
               </p>
@@ -159,8 +225,8 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
                 <div
                   className={
                     msg.role === "user"
-                      ? "max-w-lg bg-[#1B2430] text-[#FDFCF9] px-5 py-3 rounded-sm text-sm leading-relaxed"
-                      : "max-w-2xl bg-white border border-[#1B2430]/10 px-5 py-4 rounded-sm text-sm leading-relaxed whitespace-pre-wrap"
+                      ? "max-w-[85%] sm:max-w-lg bg-[#1B2430] text-[#FDFCF9] px-4 sm:px-5 py-2.5 sm:py-3 rounded-sm text-sm leading-relaxed"
+                      : "max-w-[90%] sm:max-w-2xl bg-white border border-[#1B2430]/10 px-4 sm:px-5 py-3 sm:py-4 rounded-sm text-sm leading-relaxed whitespace-pre-wrap"
                   }
                 >
                   {msg.role === "assistant" ? (
@@ -178,8 +244,10 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
           })}
         </div>
 
-        <div className="px-10 py-6 border-t border-[#1B2430]/10">
-          <div className="flex items-end gap-3 max-w-3xl">
+        <div className="shrink-0 px-4 sm:px-10 py-3 sm:py-6 border-t border-[#1B2430]/10 bg-[#FDFCF9]"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          <div className="flex items-end gap-2 sm:gap-3 max-w-3xl">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -189,14 +257,14 @@ export default function PolicyChatClient({ initialUser }: { initialUser: Current
                   handleSend();
                 }
               }}
-              placeholder="e.g. What is the notice period for termination?"
+              placeholder="Ask about a policy…"
               rows={1}
-              className="flex-1 resize-none border border-[#1B2430]/15 bg-white rounded-sm px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
+              className="flex-1 resize-none border border-[#1B2430]/15 bg-white rounded-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8A7A5C]/40"
             />
             <button
               onClick={handleSend}
               disabled={isSending || !input.trim()}
-              className="bg-[#1B2430] text-[#FDFCF9] text-sm font-medium px-5 py-3 rounded-sm hover:bg-[#2A3648] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="bg-[#1B2430] text-[#FDFCF9] text-sm font-medium px-4 sm:px-5 py-2.5 sm:py-3 rounded-sm hover:bg-[#2A3648] transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
             >
               Ask
             </button>

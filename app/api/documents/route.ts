@@ -1,3 +1,5 @@
+//api/documents/route.ts
+
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {

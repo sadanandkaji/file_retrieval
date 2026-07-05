@@ -1,3 +1,4 @@
+// admin/users/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession, hashPassword } from "@/lib/auth";
 
