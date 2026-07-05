@@ -26,8 +26,25 @@ export default function PolicyChatClient({
   const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // When true, the next scroll (triggered by the messages effect below)
+  // should jump instantly to the bottom — used when a whole chat's history
+  // just loaded. Streaming a live answer instead scrolls smoothly, since
+  // that's a token-by-token trickle, not a full history swap.
+  const instantScrollNextRef = useRef(false);
+
+  function scrollToBottom(smooth: boolean) {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    // Wait a tick so the newly-rendered messages have their real height
+    // before we measure scrollHeight — otherwise this can undershoot.
+    requestAnimationFrame(() => {
+      scrollToBottom(!instantScrollNextRef.current);
+      instantScrollNextRef.current = false;
+    });
   }, [messages]);
 
   async function loadChats() {
@@ -44,6 +61,7 @@ export default function PolicyChatClient({
     const res = await fetch(`/api/chats/${id}`);
     if (!res.ok) return;
     const data = await res.json();
+    instantScrollNextRef.current = true;
     setMessages(
       (data.chat?.messages ?? []).map((m: { role: string; content: string; citations: unknown }) => ({
         role: m.role,
@@ -184,7 +202,7 @@ export default function PolicyChatClient({
   }
 
   return (
-    <div className="h-dvh bg-[#F7F5F0] text-[#1B2430] flex overflow-hidden">
+    <div className="fixed inset-0 h-dvh bg-[#F7F5F0] text-[#1B2430] flex overflow-hidden">
       <Sidebar
         chats={chats}
         activeChatId={activeChatId}
@@ -196,7 +214,7 @@ export default function PolicyChatClient({
         onDeleteChat={handleDeleteChat}
       />
 
-      <main className="flex-1 flex flex-col h-dvh min-w-0">
+      <main className="flex-1 flex flex-col h-dvh min-w-0 min-h-0">
         <header className="shrink-0 px-4 sm:px-10 py-4 sm:py-6 border-b border-[#1B2430]/10 bg-[#F7F5F0]">
           <p className="text-[10px] sm:text-[11px] tracking-[0.18em] uppercase text-[#8A7A5C] font-medium">
             Ask the register
@@ -230,7 +248,9 @@ export default function PolicyChatClient({
                   }
                 >
                   {msg.role === "assistant" ? (
-                    msg.content || isLive ? (
+                    isLive && !msg.content ? (
+                      <ThinkingDots />
+                    ) : msg.content || isLive ? (
                       <StreamingMessage fullText={msg.content} isStreaming={isLive} />
                     ) : (
                       <span className="text-[#1B2430]/40">Reading the register…</span>
@@ -272,5 +292,24 @@ export default function PolicyChatClient({
         </div>
       </main>
     </div>
+  );
+}
+
+function ThinkingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 py-1" aria-label="Thinking">
+      <span
+        className="w-1.5 h-1.5 rounded-full bg-[#1B2430]/40 animate-bounce"
+        style={{ animationDelay: "0ms", animationDuration: "1s" }}
+      />
+      <span
+        className="w-1.5 h-1.5 rounded-full bg-[#1B2430]/40 animate-bounce"
+        style={{ animationDelay: "150ms", animationDuration: "1s" }}
+      />
+      <span
+        className="w-1.5 h-1.5 rounded-full bg-[#1B2430]/40 animate-bounce"
+        style={{ animationDelay: "300ms", animationDuration: "1s" }}
+      />
+    </span>
   );
 }

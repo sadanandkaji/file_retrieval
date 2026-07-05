@@ -166,7 +166,7 @@ export default function Sidebar({
                         "shrink-0 mr-1 w-7 h-7 flex items-center justify-center rounded-sm transition-colors " +
                         (deletingId === c.id
                           ? "text-[#1B2430]/30"
-                          : "text-[#1B2430]/40 opacity-0 group-hover:opacity-100 hover:bg-[#1B2430]/10 hover:text-red-600")
+                          : "text-[#1B2430]/40 hover:bg-[#1B2430]/10 hover:text-red-600")
                       }
                     >
                       {deletingId === c.id ? <SpinnerIcon /> : <TrashIcon />}
