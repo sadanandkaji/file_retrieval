@@ -1,58 +1,9 @@
-import pdf from "pdf-parse/lib/pdf-parse.js";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma";
 import { getSession } from "@/lib/auth";
 import { uploadPdfToB2 } from "@/lib/b2";
-
-// Splits on numbered section headings (e.g. "1. Purpose", "2. Corporate Card Usage")
-// instead of relying on blank lines, which pdf-parse often strips out.
-function chunkPolicyText(
-  text: string
-): { text: string; section: string; page: number }[] {
-  const lines = text.split("\n").map((l) => l.trim());
-  const headingRegex = /^(\d+(\.\d+)*)\.\s+(.{2,80})$/;
-
-  const chunks: { text: string; section: string; page: number }[] = [];
-  let currentSection = "General";
-  let currentLines: string[] = [];
-
-  function flush() {
-    const content = currentLines.join(" ").replace(/\s+/g, " ").trim();
-    if (content.length > 0) {
-      chunks.push({ text: content, section: currentSection, page: 0 });
-    }
-    currentLines = [];
-  }
-
-  for (const line of lines) {
-    if (!line) continue;
-    const match = line.match(headingRegex);
-    if (match) {
-      flush();
-      currentSection = line;
-      currentLines.push(line);
-    } else {
-      currentLines.push(line);
-    }
-  }
-  flush();
-
-  if (chunks.length <= 1) {
-    const words = text.split(/\s+/).filter(Boolean);
-    const fallbackChunks: { text: string; section: string; page: number }[] = [];
-    const wordLimit = 350;
-    for (let i = 0; i < words.length; i += wordLimit) {
-      fallbackChunks.push({
-        text: words.slice(i, i + wordLimit).join(" "),
-        section: "General",
-        page: 0,
-      });
-    }
-    return fallbackChunks;
-  }
-
-  return chunks;
-}
+import { extractPdfWithLayout } from "@/lib/pdfExtract";
+import { aiChunkDocument } from "@/lib/aiChunk";
 
 export async function POST(req: Request) {
   if (!process.env.AICREDITS_KEY) {
@@ -83,20 +34,42 @@ export async function POST(req: Request) {
     return Response.json({ error: "Backblaze B2 upload failed" }, { status: 500 });
   }
 
-  // 2. Extract + chunk the text.
-  const data = await pdf(buffer);
-  const chunks = chunkPolicyText(data.text).filter(
-    (c) => c.text && c.text.trim().length > 0
-  );
+  // 2. Extract text with layout/position awareness (handles both linear
+  // documents and table-style layouts, unlike flat pdf-parse text).
+  let fullText: string;
+  try {
+    const extracted = await extractPdfWithLayout(buffer);
+    fullText = extracted.fullText;
+  } catch (err) {
+    console.error("PDF extraction failed:", err);
+    return Response.json({ error: "Failed to read PDF content" }, { status: 400 });
+  }
 
-  if (chunks.length === 0) {
+  if (!fullText || !fullText.trim()) {
     return Response.json(
       { error: "No extractable text found in this PDF." },
       { status: 400 }
     );
   }
 
-  // 3. Remove any previous document/chunks with the same name, then create fresh records.
+  // 3. Let the model structure the extracted text into sections/chunks,
+  // instead of relying on brittle regex heading detection.
+  let chunks;
+  try {
+    chunks = await aiChunkDocument(fullText, process.env.AICREDITS_KEY);
+  } catch (err) {
+    console.error("AI chunking failed:", err);
+    return Response.json({ error: "Failed to structure PDF content" }, { status: 500 });
+  }
+
+  if (chunks.length === 0) {
+    return Response.json(
+      { error: "No usable content produced from this PDF." },
+      { status: 400 }
+    );
+  }
+
+  // 4. Remove any previous document/chunks with the same name, then create fresh records.
   const existingDoc = await prisma.document.findFirst({ where: { name: file.name } });
   if (existingDoc) {
     await prisma.document.delete({ where: { id: existingDoc.id } });
@@ -105,8 +78,8 @@ export async function POST(req: Request) {
   const document = await prisma.document.create({
     data: {
       name: file.name,
-      cloudinaryUrl: b2Result.url, // now holds the B2 file URL
-      cloudinaryPublicId: b2Result.key, // now holds the B2 object key
+      cloudinaryUrl: b2Result.url,
+      cloudinaryPublicId: b2Result.key,
       status: "UPLOADING",
       uploadedById: session.sub,
     },
@@ -124,7 +97,7 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           model: "text-embedding-3-small",
-          input: chunk.text,
+          input: chunk.content,
         }),
       });
 
@@ -147,9 +120,9 @@ export async function POST(req: Request) {
         VALUES (
           ${document.id},
           ${file.name},
-          ${chunk.section},
-          ${chunk.page},
-          ${chunk.text},
+          ${chunk.section_title},
+          ${chunk.page_number},
+          ${chunk.content},
           ${Prisma.raw(vectorLiteral)}
         )
       `;

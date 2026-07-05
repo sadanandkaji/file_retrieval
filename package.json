@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-      "dev": "next dev",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "postinstall": "prisma generate",
@@ -19,6 +19,7 @@
     "jose": "^6.2.3",
     "next": "16.2.10",
     "pdf-parse": "^1.1.1",
+    "pdf2json": "^4.0.3",
     "pg": "^8.22.0",
     "prisma": "^7.8.0",
     "react": "19.2.4",

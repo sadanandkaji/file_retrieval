@@ -136,11 +136,17 @@ export async function POST(req: Request) {
   const embedding = embedJson.data[0].embedding;
   const vectorLiteral = `'${JSON.stringify(embedding)}'::vector`;
 
-  // 2. Retrieve top matching policy chunks.
+  // 2. Retrieve top matching policy chunks. Joined against `documents` and
+  // filtered to READY so orphaned rows (deleted/replaced documents, stale
+  // test data with a null document_id) can never be retrieved — without
+  // this, garbage chunks from old uploads stay searchable forever and get
+  // mixed into otherwise-correct answers.
   const results = (await prisma.$queryRaw`
-    SELECT content, document_name, section_title, page_number
-    FROM policy_chunks
-    ORDER BY embedding <=> ${Prisma.raw(vectorLiteral)}
+    SELECT pc.content, pc.document_name, pc.section_title, pc.page_number
+    FROM policy_chunks pc
+    INNER JOIN documents d ON d.id = pc.document_id
+    WHERE d.status = 'READY'
+    ORDER BY pc.embedding <=> ${Prisma.raw(vectorLiteral)}
     LIMIT 12
   `) as PolicyChunkResult[];
 
