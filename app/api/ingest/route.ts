@@ -40,10 +40,17 @@ export async function POST(req: Request) {
   let pages;
   try {
     pages = await rasterizePdf(buffer);
-  } catch (err) {
-    console.error("PDF rasterization failed:", err);
-    return Response.json({ error: "Failed to read PDF content" }, { status: 400 });
-  }
+ } catch (err) {
+  console.error("PDF rasterization failed:", err);
+  return Response.json(
+    {
+      error: "Failed to read PDF content",
+      debug: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    },
+    { status: 400 }
+  );
+}
 
   if (!pages || pages.length === 0) {
     return Response.json(
