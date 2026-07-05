@@ -76,14 +76,38 @@ export async function POST(req: Request) {
     LIMIT 12
   `) as PolicyChunkResult[];
 
+  // No documents indexed at all — respond like a normal streamed assistant
+  // message (and save it to history) instead of a raw JSON error, so the
+  // frontend's existing SSE parsing handles it exactly like any other reply.
   if (results.length === 0) {
-    return Response.json(
-      {
-        error:
-          "No policy data found in the database. Upload a PDF through /uploads first.",
+    const noDocsMessage =
+      "There are no policy documents uploaded yet, so I don't have anything to answer from. Upload a policy PDF from the Uploads page, then ask me again.";
+
+    await prisma.message.create({
+      data: {
+        chatSessionId: sessionRecord.id,
+        role: "assistant",
+        content: noDocsMessage,
+        citations: [] as unknown as Prisma.InputJsonValue,
       },
-      { status: 400 }
-    );
+    });
+
+    const encoder = new TextEncoder();
+    const fakeStream = new ReadableStream({
+      start(controller) {
+        const chunk = { choices: [{ delta: { content: noDocsMessage } }] };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        controller.close();
+      },
+    });
+
+    return new Response(fakeStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "X-Chat-Session-Id": sessionRecord.id,
+      },
+    });
   }
 
   const citations = results.map((r) => ({
