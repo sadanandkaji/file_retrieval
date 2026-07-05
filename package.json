@@ -27,6 +27,9 @@
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
+  "optionalDependencies": {
+  "@napi-rs/canvas-linux-x64-gnu": "1.0.2"
+},
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
